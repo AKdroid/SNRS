@@ -92,10 +92,8 @@ user_rating_bussiness_attr_sum = user_rating_bussiness_attr.map(getSumOfAttribut
 
 def getAttributesProbabiliy(x):
 	list_probability = []
-	for val in x[2]:
-		probability = []
-		for index in range(0, len(val), 1):
-			probability.append((val[index] + 1.0) / (x[1][index] + 2))
+	for index in range(0, len(x[1]), 1):
+		probability = (x[1][index] + 1.0) / (len(x[2]) + 2)
 		list_probability.append(probability)
 	return (x[0], list_probability)
 
