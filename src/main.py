@@ -1,9 +1,9 @@
 from pyspark.sql import SQLContext
 from pyspark.mllib.stat import Statistics
 import scipy
+import numpy as np
 from scipy.stats import pearsonr
 import pickle
-import math
 
 sqlContext = SQLContext(sc)
 
@@ -90,11 +90,39 @@ def getSumOfAttributes(x):
 
 user_rating_bussiness_attr_sum = user_rating_bussiness_attr.map(getSumOfAttributes)
 
-def getAttributesProbabiliy(x):
+def getAttributesProbability(x):
 	list_probability = []
 	for index in range(0, len(x[1]), 1):
 		probability = (x[1][index] + 1.0) / (len(x[2]) + 2)
 		list_probability.append(probability)
 	return (x[0], list_probability)
 
-user_rating_bussiness_attr_prob = user_rating_bussiness_attr_sum.map(getAttributesProbabiliy)
+user_rating_bussiness_attr_prob = user_rating_bussiness_attr_sum.map(getAttributesProbability)
+
+def correlationCalculator(u_v_pair):
+	u = u_v_pair[0]
+	v = u_v_pair[1]
+	u_businesses = user_businesses[u]
+	v_businesses = user_businesses[v]
+	final_businesses = u_businesses.intersection(v_businesses) 
+	if len(final_businesses) == 0:
+		return (u,v,0,{})
+	rating_u = [float(rating_dict[u+"_"+k]) for k in final_businesses ]
+	rating_v = [float(rating_dict[v+"_"+k]) for k in final_businesses ]
+	x = np.array(rating_u)
+	y = np.array(rating_v)
+	diff = x-y
+	dictCorr = { i : 0 for i in range(-4,5)}
+	for item in diff:
+		dictCorr[int(item)] += 1 
+	return (u, v, len(final_businesses),dictCorr)
+
+user_friends_correlation = user_friends_list.map(correlationCalculator).filter(lambda p: p[2]>=3)
+
+dictCorr = {}
+for item in user_friends_correlation.collect():
+	dictCorr[item[0]+"_"+item[1]] = item[3]
+	dictCorr[item[1]+"_"+item[0]] = {-k:v for k,v in item[3].items()}
+	dictCorr[item[0]+"_"+item[1]]["l"] = item[2]
+	dictCorr[item[1]+"_"+item[0]]["l"] = item[2]
+
