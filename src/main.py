@@ -3,14 +3,13 @@ from pyspark.mllib.stat import Statistics
 import scipy
 from scipy.stats import pearsonr
 import pickle
+import math
 
 sqlContext = SQLContext(sc)
 
 users_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/CSVs/User.csv'
-business_category_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/CSVs/business_category_map.csv'
 ratings_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/CSVs/Ratings.csv'
 business_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/CSVs/Business.csv'
-category_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/CSVs/Category.csv'
 user_friends_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/CSVs/Edges.txt'
 rating_dict_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/pickles/ratings_dict.pickle'
 user_businesses_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/pickles/user_businesses.pickle'
@@ -18,17 +17,11 @@ user_businesses_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Busine
 user = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load(users_file)
 user.registerTempTable("Users")
 
-business_category = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load(business_category_file)
-business_category.registerTempTable("Business_Category")
-
 ratings  = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load(ratings_file)
 ratings.registerTempTable("Ratings")
 
 business  = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load(business_file)
 business.registerTempTable("Business")
-
-category = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load(category_file)
-category.registerTempTable("Category")
 
 user_friends = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load(user_friends_file)
 user_friends.registerTempTable("User_Friends")
@@ -46,22 +39,6 @@ user_friends_list = sqlContext.sql("SELECT * FROM User_Friends")
 """ Converting SQl DataFrame to RDD """
 user_friends_rdd = user_friends_list.map(lambda p: (p.User, p.Friend))
 
-"""
-def getWeights(u_v_pair):
-	u = u_v_pair[0]
-	v = u_v_pair[1]
-	try:
-		businesses = sqlContext.sql("SELECT business_id, user_id, stars FROM Ratings WHERE user_id = '%s' OR user_id = '%s'" %(u, v))
-		businesses_rdd = businesses.map(lambda p: (p.business_id, (p.user_id, p.stars))).groupByKey().filter(lambda p: len(p[1]) > 1)
-		ratings_rdd = businesses_rdd.map(lambda p: sorted(p[1], key=lambda x: x[0]))
-		ratings_u = ratings_rdd.map(lambda p: p[0][1])
-		ratings_v = ratings_rdd.map(lambda p: p[1][1])
-		w = Statistics.corr(ratings_u, ratings_v, method="pearson")
-		return (u, v, w)
-	except Exception, e:
-		return (u, v, 0)
-"""
-
 def getWeights(u_v_pair):
 	u = u_v_pair[0]
 	v = u_v_pair[1]
@@ -78,3 +55,48 @@ def getWeights(u_v_pair):
 	return (u, v, p_value)
 
 weights_rdd = user_friends_rdd.map(getWeights)
+
+user_rating_list = sqlContext.sql("SELECT user_id, stars, count(*) cnt FROM Ratings GROUP BY user_id, stars ORDER BY user_id")
+
+user_rating_dict = user_rating_list.map(lambda x: (x.user_id,(x.stars,x.cnt))).groupByKey()
+
+def sumCalculator(x):
+	sum = 0
+	for val in x[1]:
+		sum = sum + val[1]
+	return (x[0], sum, x[1])
+
+user_rating_update = user_rating_dict.map(sumCalculator)
+
+def getProbability(x):
+	list_probability = [(1.0 / (x[1] + 5))] * 5
+	for val in x[2]:
+		list_probability[(val[0] - 1)] = ((1.0 + val[1])/ (x[1] + 5))
+	return (x[0], tuple(list_probability))
+
+user_rating_priors = user_rating_update.map(getProbability)
+
+user_rating_businesses = sqlContext.sql("SELECT concat(r.user_id, '~', r.stars) as user_stars, b.attributes FROM Ratings r, Business b WHERE r.business_id = b.business_id ORDER BY user_id")
+
+def parseAttributes(x):
+	user_star = x[0]
+	attr = map(int, x[1].split())
+	return (user_star, attr)
+
+user_rating_bussiness_attr = user_rating_businesses.map(parseAttributes).groupByKey()
+
+def getSumOfAttributes(x):
+	return (x[0], map(sum, zip(*x[1])), x[1])
+
+user_rating_bussiness_attr_sum = user_rating_bussiness_attr.map(getSumOfAttributes)
+
+def getAttributesProbabiliy(x):
+	list_probability = []
+	for val in x[2]:
+		probability = []
+		for index in range(0, len(val), 1):
+			probability.append((val[index] + 1.0) / (x[1][index] + 2))
+		list_probability.append(probability)
+	return (x[0], list_probability)
+
+user_rating_bussiness_attr_prob = user_rating_bussiness_attr_sum.map(getAttributesProbabiliy)
