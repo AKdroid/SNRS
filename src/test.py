@@ -18,12 +18,17 @@ users_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelli
 ratings_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/CSVs/Ratings_test.csv'
 business_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/CSVs/Business.csv'
 user_friends_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/CSVs/Edges_test.txt'
-user_business_pickle = "/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/pickles/business_users.pickle"
+#b_users_pickle = "/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/pickles/b_users.pickle"
+#naive_pickle = "/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/pickles/naive.pickle"
+user_complete_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/CSVs/User.csv'
 
+"""f = open(naive_pickle)
+naive_dict = pickle.load(f)
+f.close()"""
 
-f = open(user_business_pickle)
+"""f = open(b_users_pickle)
 business_users_dict = pickle.load(f)
-f.close()
+f.close()"""
 
 f = open(weights_pickle)
 weights_dict = pickle.load(f)
@@ -69,6 +74,9 @@ business.registerTempTable("Business")
 user_friends = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load(user_friends_file)
 user_friends.registerTempTable("User_Friends")
 
+user_complete = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load(user_complete_file)
+user_complete.registerTempTable("User_Data")
+
 user_rating_list = sqlContext.sql("SELECT user_id, business_id, stars FROM Ratings ORDER BY user_id")
 
 user_rating_actual_rdd = user_rating_list.map(lambda p: p[2])
@@ -76,7 +84,17 @@ user_rating_actual = user_rating_list.map(lambda p: p[2]).collect()
 
 num_of_attributes = 154
 
-businesses = sqlContext.sql("SELECT * FROM Business b")
+businesses = sqlContext.sql("SELECT * FROM Business")
+
+users_complete_data = sqlContext.sql("SELECT user_id, average_stars FROM User_Data")
+users_avg_rating_rdd = users_complete_data.map(lambda x: (x.user_id, x.average_stars))
+user_avg_rating = {}
+for value in users_avg_rating_rdd.collect():
+	user_avg_rating[value[0]] = float(value[1])
+
+f = open("/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/pickles/user_avg_ratings.pickle", "w")
+pickle.dump(user_avg_rating, f)
+f.close()
 
 def parseAttributes(x):
 	b_id = x[0]
@@ -130,13 +148,19 @@ def calculateNB(x):
 
 business_user_rdd = user_rating_list.map(lambda p: (p[1], p[0])).groupByKey()
 
+naive_dict = {}
 def getRating(user, business_id):
 	rating = 1.0
 	if rating_train_dict.has_key(user):
 		rating = rating_train_dict[user]
 	else:
-		probabilities = calculateNB((user, business_id))
-		rating = randomSelect(probabilities)
+		key = user+"_"+business_id
+		if key not in naive_dict:
+			probabilities = calculateNB((user, business_id))
+			rating = randomSelect(probabilities)
+			naive_dict[key] = rating
+		else:
+			rating = naive_dict[key]
 	return rating
 
 """business_users_dict = {}
@@ -158,7 +182,33 @@ f = open("/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligenc
 pickle.dump(business_users_dict, f)
 f.close()"""
 
+def generateBusinessUserRatings():
+	b_users = {}
+	business_list = business_attr_dict.keys()
+	users_list = user_businesses.keys()
+	for business in business_list:
+		u_ratings = {}
+		for user in users_list:
+			print user, business
+			if user not in u_ratings:
+				u_ratings[user] = getRating(user, business)
+			if user not in graph_dict:
+				continue
+			friends = graph_dict[user]
+			for friend in friends:
+				if friend not in u_ratings:
+					u_ratings[friend] = getRating(friend, business)
+		b_users[business] = u_ratings
+	f = open("/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/pickles/naive.pickle", "w")
+	pickle.dump(naive_dict, f)
+	f.close()
+	f = open("/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/pickles/b_users.pickle", "w")
+	pickle.dump(b_users, f)
+	f.close()
 
+generateBusinessUserRatings()
+
+sys.exit(0)
 
 def getDistantFriendsRating(user, friends, business_id):
 	rating = 0.0
@@ -174,10 +224,8 @@ def getDistantFriendsRating(user, friends, business_id):
 					k_rvi = correlation_dict[user+"_"+friend][r - rvi] 
 					length = correlation_dict[user+"_"+friend]['l'] 
 					product *= (1.0 * k_rvi) / length
-					#print product,"product"
 		rating += product
-		total_prob += product/r 
-		#print rating,total_prob, business_users_dict[business_id][user]
+		total_prob += product/r
 	if flag:
 		if total_prob == 0.0:
 			business_users_dict[business_id][user] = getRating(user, business_id)
@@ -185,29 +233,29 @@ def getDistantFriendsRating(user, friends, business_id):
 			business_users_dict[business_id][user] = rating/total_prob
 	else:
 		business_users_dict[business_id][user] = getRating(user, business_id)
-	#print business_id,user, business_users_dict[business_id][user]
 
-for business_id in business_users_dict.keys():
-	users = business_users_dict[business_id].keys()
-	for m in range(1, 6, 1):
-		random.shuffle(users)
-		for user in users:
-			if not rating_train_dict.has_key(user+"_"+business_id):
-				if user not in graph_dict:
-					continue
-				friends = graph_dict[user]
-				getDistantFriendsRating(user, friends, business_id)
+def genarateFinalRatings():
+	for business_id in business_users_dict.keys():
+		users = business_users_dict[business_id].keys()
+		for m in range(1, 6, 1):
+			random.shuffle(users)
+			for user in users:
+				if not rating_train_dict.has_key(user+"_"+business_id):
+					if user not in graph_dict:
+						continue
+					friends = graph_dict[user]
+					getDistantFriendsRating(user, friends, business_id)
 
-#sys.exit(0)
+genarateFinalRatings()
 
-def evaluate(predicted,actual):
+"""def evaluate(predicted,actual):
 	correct = 0
 	error = 0.0
 	for i in range(len(predicted)):
 		error += abs(predicted[i] - actual[i])
 		if predicted[i] == actual[i]:
 			correct+=1
-	return error*1.0/len(predicted),correct*1.0/len(predicted);
+	return error*1.0/len(predicted),correct*1.0/len(predicted)"""
 
 def evaluateResults():
 	correct = 0
@@ -228,5 +276,31 @@ def evaluateResults():
 	return error*1.0/count, correct*1.0/count
 
 err,acc = evaluateResults()
-print "accuracy", acc
+print "accuracy for classification", acc
 print "mean absolute error", err
+
+def getRecommendationList(user):
+	ratings = sorted([(b, float(d[user])) for b,d in business_users_dict if user+"_"+b not in rating_train_dict],key = lambda t : -t[1])
+	avg_rating = user_avg_rating[user]
+	#ratings = [(x[0], int(round(x[1]))) for x in ratings if x[1] >= avg_rating]
+	recommendations_list = [x[0] for x in ratings if x[1] >= avg_rating]
+	return recommendations_list
+
+def evaluateScore(user, recommendations_list):
+	business_list = user_businesses[user]
+	if len(business_list) == 0:
+		return 0.0
+	common_recommendations = set(recommendations_list).intersection(set(business_list))
+	score = float(len(common_recommendations)) / len(business_list)
+	return score
+
+def evaluateRecommendations():
+	score = 0.0
+	cnt = 0
+	for user in user_businesses.keys():
+		score += evaluateScore(user, getRecommendationList(user))
+		cnt += 1
+	return score / cnt
+
+accuracy = evaluateRecommendations()
+print "accuracy : ", accuracy
