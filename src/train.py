@@ -6,12 +6,12 @@ import pickle
 
 sqlContext = SQLContext(sc)
 
-users_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/CSVs/user_train.csv'
-ratings_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/CSVs/Ratings_train.csv'
-business_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/CSVs/Business.csv'
-user_friends_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/CSVs/Edges_train.txt'
-rating_dict_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/pickles/ratings_dict.pickle'
-user_businesses_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/pickles/user_businesses.pickle'
+users_file = 'csvs/User.csv'
+ratings_file = 'csvs/Ratings_train.csv'
+business_file = 'csvs/Business.csv'
+user_friends_file = 'csvs/edges_train.txt'
+rating_dict_file = 'pickles/rating_train_dict.pickle'
+user_businesses_file = 'pickles/user_businesses_train.pickle'
 
 user = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load(users_file)
 user.registerTempTable("Users")
@@ -36,7 +36,7 @@ f.close()
 user_friends_list = sqlContext.sql("SELECT * FROM User_Friends")
 
 """ Converting SQl DataFrame to RDD """
-user_friends_rdd = user_friends_list.map(lambda p: (p.User, p.Friend))
+user_friends_rdd = user_friends_list.map(lambda p: (p.user, p.friend))
 
 def getWeights(u_v_pair):
 	u = u_v_pair[0]
@@ -125,23 +125,23 @@ for item in user_friends_correlation.collect():
 	dictCorr[item[0]+"_"+item[1]]["l"] = item[2]
 	dictCorr[item[1]+"_"+item[0]]["l"] = item[2]
 
-weights_pickle = open("/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/train_results/weights.pickle", "w")
+weights_pickle = open("pickles/weights.pickle", "w")
 weights_dict = {}
 for value in weights_rdd.collect():
 	weights_dict[value[0] + "_" + value[1]] = float(value[2])
 pickle.dump(weights_dict, weights_pickle)
 
-priors_pickle = open("/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/train_results/priors.pickle", "w")
+priors_pickle = open("pickles/priors.pickle", "w")
 priors_dict = {}
 for value in user_rating_priors.collect():
 	priors_dict[value[0]] = value[1]
 pickle.dump(priors_dict, priors_pickle)
 
-attributes_prob_pickle = open("/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/train_results/attributes_probability.pickle", "w")
+attributes_prob_pickle = open("pickles/attributes_probability.pickle", "w")
 attributes_prob_dict = {}
 for value in user_rating_bussiness_attr_prob.collect():
 	attributes_prob_dict[value[0]] = value[1]
 pickle.dump(attributes_prob_dict, attributes_prob_pickle)
 
-correlation_pickle = open("/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/train_results/correlation.pickle", "w")
+correlation_pickle = open("pickles/correlation.pickle", "w")
 pickle.dump(dictCorr, correlation_pickle)
