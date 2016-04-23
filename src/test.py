@@ -29,27 +29,24 @@ priors_pickle = "pickles/priors.pickle"
 attributes_prob_pickle = "pickles/attributes_probability.pickle"
 correlation_pickle = "pickles/correlation.pickle"
 graphs_pickle = "pickles/graph.pickle"
-rating_dict_file = 'pickles/ratings_test_dict.pickle'
-ratings_train_dict_file = 'pickles/ratings_dict.pickle'
+rating_dict_file = 'pickles/rating_test_dict.pickle'
+ratings_train_dict_file = 'pickles/rating_train_dict.pickle'
 user_businesses_file = 'pickles/user_businesses_test.pickle'
 users_file = 'csvs/user_test.csv'
 ratings_file = 'csvs/Ratings_test.csv'
 business_file = 'csvs/Business.csv'
-user_friends_file = 'csvs/Edges_test.txt'
+user_friends_file = 'csvs/edges_test.txt'
 user_complete_file = 'csvs/User.csv'
+naive_pickle = 'pickles/naive.pickle'
+b_users_pickle = 'pickles/b_users.pickle'
 
+f = open(naive_pickle)
+naive_matrix = pickle.load(f)
+f.close()
 
-
-
-
-
-"""f = open(naive_pickle)
-naive_dict = pickle.load(f)
-f.close()"""
-
-"""f = open(b_users_pickle)
-business_users_dict = pickle.load(f)
-f.close()"""
+f = open(b_users_pickle)
+rating_matrix = pickle.load(f)
+f.close()
 
 f = open(weights_pickle)
 weights_dict = pickle.load(f)
@@ -83,8 +80,8 @@ f = open(user_businesses_file)
 user_businesses = pickle.load(f)
 f.close()
 
-user = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load(users_file)
-user.registerTempTable("Users")
+#user = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load(users_file)
+#user.registerTempTable("Users")
 
 ratings  = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load(ratings_file)
 ratings.registerTempTable("Ratings")
@@ -176,7 +173,7 @@ def calculateNB(x):
 
 business_user_rdd = user_rating_list.map(lambda p: (p[1], p[0])).groupByKey()
 
-naive_matrix = np.zeros( (len(business_attr_dict),len(user_avg_rating)) )
+#naive_matrix = np.zeros( (len(business_attr_dict),len(user_avg_rating)) )
 def getRating(user, business_id):
     bindex = business_attr_dict[business_id][0]
     uindex = user_avg_rating[user][0]
@@ -243,21 +240,24 @@ def generateBusinessUserRatings():
     f.close()
     return rating_matrix
 
-generateBusinessUserRatings()
+#generateBusinessUserRatings()
 
-sys.exit(0)
+#sys.exit(0)
 
 def getDistantFriendsRating(user, friends, business_id):
     rating = 0.0
     total_prob = 0.0
     flag = False
+    bindex = business_attr_dict[business_id][0]
+    uindex = user_avg_rating[user][0]
     for r in range(1, 6, 1):
         product = 1.0 * r
         for friend in friends:
+            findex = user_avg_rating[friend][0]
             if rating_train_dict.has_key(friend+"_"+business_id):
-                if user+"_"+friend in correlation_dict and friend in business_users_dict[business_id]:
+                if user+"_"+friend in correlation_dict and rating_matrix[bindex,findex]>0:
                     flag = True
-                    rvi =  business_users_dict[business_id][friend]
+                    rvi =  rating_matrix[bindex,findex]
                     k_rvi = correlation_dict[user+"_"+friend][r - rvi] 
                     length = correlation_dict[user+"_"+friend]['l'] 
                     product *= (1.0 * k_rvi) / length
@@ -265,18 +265,24 @@ def getDistantFriendsRating(user, friends, business_id):
         total_prob += product/r
     if flag:
         if total_prob == 0.0:
-            business_users_dict[business_id][user] = getRating(user, business_id)
+            rating_matrix[bindex,uindex] = getRating(user, business_id)
         else:
-            business_users_dict[business_id][user] = rating/total_prob
+            rating_matrix[bindex,uindex] = rating/total_prob
     else:
-        business_users_dict[business_id][user] = getRating(user, business_id)
+        rating_matrix[bindex,uindex] = getRating(user, business_id)
 
 def genarateFinalRatings():
-    for business_id in business_users_dict.keys():
-        users = business_users_dict[business_id].keys()
+    total = 5 * len(business_attr_dict) * len (user_avg_rating)*1.0
+    cnt = 0
+    users = user_avg_rating.keys()
+    for business_id in business_attr_dict.keys():
+        #users = user_avg_rating.keys()
         for m in range(1, 6, 1):
             random.shuffle(users)
             for user in users:
+                cnt+=1
+                sys.stdout.write("\r Progress:  Iteration: %d Total: %0.3f"%(m,cnt/total*100.0)+"%")
+                sys.stdout.flush()
                 if not rating_train_dict.has_key(user+"_"+business_id):
                     if user not in graph_dict:
                         continue
@@ -300,11 +306,13 @@ def evaluateResults():
     count = 0 
     cnt = { k : 0 for k in range(1,10)}
     for user in user_businesses.keys():
+        uindex = user_avg_rating[user][0]
         for business in user_businesses[user]:
+            bindex = business_attr_dict[business][0]
             count += 1
             key = user + "_" + business
             actual = rating_dict[key]
-            predicted = round(business_users_dict[business][user])
+            predicted = round(rating_matrix[bindex,uindex])
             cnt [int(predicted)] += 1
             error += abs(int(actual) - int(predicted))
             if(int(actual) == int(predicted)):
@@ -317,9 +325,9 @@ print "accuracy for classification", acc
 print "mean absolute error", err
 
 def getRecommendationList(user):
-    ratings = sorted([(b, float(d[user])) for b,d in business_users_dict if user+"_"+b not in rating_train_dict],key = lambda t : -t[1])
-    avg_rating = user_avg_rating[user]
-    #ratings = [(x[0], int(round(x[1]))) for x in ratings if x[1] >= avg_rating]
+    uindex = user_avg_rating[user][0]
+    ratings = sorted([(b,rating_matrix[business_attr_dict[b][0] , uindex]) for b in business_attr_dict.keys() if user+"_"+b not in rating_train_dict],key = lambda t : -t[1])
+    avg_rating = user_avg_rating[user][1]
     recommendations_list = [x[0] for x in ratings if x[1] >= avg_rating]
     return recommendations_list
 
