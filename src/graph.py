@@ -1,11 +1,12 @@
 import csv
 
-relevantUsers = []
+relevantUsers = {}
 with open('User.csv', 'rb') as csvfile:
 	lines = csv.reader(csvfile, delimiter=',')
-	relevantUsers = [id[0] for id in lines]
+	for item in lines:
+	    relevantUsers[item[0]] = True
 
-alreadyAdded = [];	
+alreadyAdded = {}	
 
 with open('Friend.csv', 'rb') as csvfile:
 	f = open("Edges.txt", 'w')
@@ -13,10 +14,10 @@ with open('Friend.csv', 'rb') as csvfile:
 		lis = lines.split(",",1)
 		if lis[0] in relevantUsers:
 			friends =  lis[1][1:-2].split(",")
-			for friend in friends:
-				friend = friend.strip()[2:-1]
-				if friend in relevantUsers and friend is not '':
-					alreadyAdded.append((lis[0].strip(),friend))
-					found = [x for x in alreadyAdded if x[1] == lis[0].strip() and x[0] == friend]
-					if(len(found) == 0):
-						f.write(lis[0].strip()+","+friend+ '\n')
+			friendList = [x.strip()[2:-1] for x in friends if relevantUsers.has_key(x.strip()[2:-1]) and x.strip()[2:-1] is not '']
+			for friend in friendList:
+				if alreadyAdded.has_key(friend+"_"+lis[0].strip()):
+					continue
+				else:					
+					alreadyAdded[lis[0].strip()+"_"+friend] = True
+					f.write(lis[0].strip()+","+friend+ '\n')
