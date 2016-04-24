@@ -172,12 +172,13 @@ def generateFinalRatings():
         Perform distant friend inference
         Driver function
     '''
-    total = 5 * len(business_attr_dict) * len (user_avg_rating)*1.0
+    M = 10
+    total = M * len(business_attr_dict) * len (user_avg_rating)*1.0
     cnt = 0
     users = user_avg_rating.keys()
     for business_id in business_attr_dict.keys():
         #users = user_avg_rating.keys()
-        for m in range(1, 6, 1):
+        for m in range(1, M+1, 1):
             random.shuffle(users)
             for user in users:
                 cnt+=1
@@ -435,7 +436,6 @@ try:
 except:
     naive_matrix = np.zeros( (len(business_attr_dict),len(user_avg_rating)) )        
     rating_matrix = generateBusinessUserRatings()    
-
 '''
     Load the rating matrix after distant friend inference
     rating_matrix : final rating matrix
@@ -447,6 +447,8 @@ try:
     f.close()
 except:
     generateFinalRatings()
+
+print 
 
 err,acc = evaluateResults()
 print "accuracy for classification", acc
