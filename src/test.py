@@ -4,26 +4,12 @@ import math
 import random
 import sys
 import numpy as np
+
+#random seeds
 random_seed = 15
 random.seed(random_seed)
-'''
-weights_pickle = "/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/train_results/weights.pickle"
-priors_pickle = "/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/train_results/priors.pickle"
-attributes_prob_pickle = "/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/train_results/attributes_probability.pickle"
-correlation_pickle = "/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/train_results/correlation.pickle"
-graphs_pickle = "/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/pickles/graph.pickle"
-rating_dict_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/pickles/ratings_test_dict.pickle'
-ratings_train_dict_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/pickles/ratings_dict.pickle'
-user_businesses_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/pickles/user_businesses_test.pickle'
-users_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/CSVs/user_test.csv'
-ratings_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/CSVs/Ratings_test.csv'
-business_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/CSVs/Business.csv'
-user_friends_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/CSVs/Edges_test.txt'
-#b_users_pickle = "/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/pickles/b_users.pickle"
-#naive_pickle = "/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/pickles/naive.pickle"
-user_complete_file = '/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/CSVs/User.csv'
-'''
 
+#filenames for pickles and csvs to be loaded
 weights_pickle = "pickles/weights.pickle"
 priors_pickle = "pickles/priors.pickle"
 attributes_prob_pickle = "pickles/attributes_probability.pickle"
@@ -39,100 +25,22 @@ user_friends_file = 'csvs/edges_test.txt'
 user_complete_file = 'csvs/User.csv'
 naive_pickle = 'pickles/naive.pickle'
 b_users_pickle = 'pickles/b_users.pickle'
+final_rating_pickle = 'pickles/rating_matrix_final.pickle'
 
-f = open(naive_pickle)
-naive_matrix = pickle.load(f)
-f.close()
-
-f = open(b_users_pickle)
-rating_matrix = pickle.load(f)
-f.close()
-
-f = open(weights_pickle)
-weights_dict = pickle.load(f)
-f.close()
-
-f = open(priors_pickle)
-priors_dict = pickle.load(f)
-f.close()
-
-f = open(attributes_prob_pickle)
-attributes_probabilitiy_dict = pickle.load(f)
-f.close()
-
-f = open(correlation_pickle)
-correlation_dict = pickle.load(f)
-f.close()
-
-f = open(graphs_pickle)
-graph_dict = pickle.load(f)
-f.close()
-
-f = open(rating_dict_file)
-rating_dict = pickle.load(f)
-f.close()
-
-f = open(ratings_train_dict_file)
-rating_train_dict = pickle.load(f)
-f.close()
-
-f = open(user_businesses_file)
-user_businesses = pickle.load(f)
-f.close()
-
-#user = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load(users_file)
-#user.registerTempTable("Users")
-
-ratings  = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load(ratings_file)
-ratings.registerTempTable("Ratings")
-
-business  = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load(business_file)
-business.registerTempTable("Business")
-
-user_friends = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load(user_friends_file)
-user_friends.registerTempTable("User_Friends")
-
-user_complete = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load(user_complete_file)
-user_complete.registerTempTable("User_Data")
-
-user_rating_list = sqlContext.sql("SELECT user_id, business_id, stars FROM Ratings ORDER BY user_id")
-
-user_rating_actual_rdd = user_rating_list.map(lambda p: p[2])
-user_rating_actual = user_rating_list.map(lambda p: p[2]).collect()
-
-num_of_attributes = 154
-
-businesses = sqlContext.sql("SELECT * FROM Business")
-
-users_complete_data = sqlContext.sql("SELECT user_id, average_stars FROM User_Data")
-users_avg_rating_rdd = users_complete_data.map(lambda x: (x.user_id, x.average_stars))
-user_avg_rating = {}
-cnt = 0
-
-for value in users_avg_rating_rdd.collect():
-    user_avg_rating[value[0]] = ( cnt ,float(value[1]))
-    cnt += 1
-
-'''
-f = open("pickles/user_avg_ratings.pickle", "w")
-pickle.dump(user_avg_rating, f)
-f.close()
-'''
 
 def parseAttributes(x):
+    '''
+        mapper for business attributes str->list of integers
+    '''
     b_id = x[0]
     attr = map(int, x[1].split())
     return (b_id, attr)
 
-bussiness_attr = businesses.map(parseAttributes)
-
-business_attr_dict = {}
-cnt = 0
-for value in bussiness_attr.collect():
-    business_attr_dict[value[0]] = (cnt,value[1])
-    cnt+=1
-
 def randomSelect(l):
+    '''
+        Selects the class with max probability
+        ties are broken randomly
+    '''
     m = max(l)
     c = l.count(m)
     if c == 1:
@@ -147,6 +55,11 @@ def randomSelect(l):
     return l.index(m)+1
 
 def calculateNB(x):
+    '''
+        Calculate the rating for user u : x[0], and business b: x[1]
+        using the naive bayes model: User Preference 
+        returns list of probabilities for all ratings 1-5
+    '''
     u = x[0]
     b = x[1]
     probabilities = [0] * 5
@@ -168,13 +81,10 @@ def calculateNB(x):
         probabilities[r-1] = prob
     return probabilities
 
-#nb_probabilities_rdd = user_rating_list.map(calculateNB)
-#nb_ratings = nb_probabilities_rdd.map(lambda x : x.index(max(x))+1).collect()
-
-business_user_rdd = user_rating_list.map(lambda p: (p[1], p[0])).groupByKey()
-
-#naive_matrix = np.zeros( (len(business_attr_dict),len(user_avg_rating)) )
 def getRating(user, business_id):
+    '''
+        returns rating so far computer for user-business pair
+    '''
     bindex = business_attr_dict[business_id][0]
     uindex = user_avg_rating[user][0]
     rating = 1.0
@@ -190,26 +100,11 @@ def getRating(user, business_id):
             rating = naive_matrix[bindex, uindex]
     return rating
 
-"""business_users_dict = {}
-for value in business_user_rdd.collect():
-    business_id = value[0]
-    users = {}
-    for user in value[1]:
-        if user not in users:
-            users[user] = getRating(user, business_id)
-        if user not in graph_dict:
-            continue
-        friends = graph_dict[user]
-        for friend in friends:
-            if friend not in users:
-                users[friend] = getRating(friend, business_id)
-    business_users_dict[business_id] = users
-
-f = open("/media/jarvis/16FABB77FABB51AB/Courses/Semester 2/Business Intelligence/Projects/Capstone/pickles/business_users.pickle", "w")
-pickle.dump(business_users_dict, f)
-f.close()"""
-
 def generateBusinessUserRatings():
+    '''
+        Initialize the rating matrix with original values if known
+        else with the naive bayes estimation
+    '''
     business_list = business_attr_dict.keys()
     users_list = user_businesses.keys()
     total = len(business_list)* len (user_avg_rating.keys())
@@ -242,9 +137,10 @@ def generateBusinessUserRatings():
 
 #generateBusinessUserRatings()
 
-#sys.exit(0)
-
 def getDistantFriendsRating(user, friends, business_id):
+    '''
+        Perform the distant friend inference for one user
+    '''
     rating = 0.0
     total_prob = 0.0
     flag = False
@@ -271,7 +167,11 @@ def getDistantFriendsRating(user, friends, business_id):
     else:
         rating_matrix[bindex,uindex] = getRating(user, business_id)
 
-def genarateFinalRatings():
+def generateFinalRatings():
+    '''
+        Perform distant friend inference
+        Driver function
+    '''
     total = 5 * len(business_attr_dict) * len (user_avg_rating)*1.0
     cnt = 0
     users = user_avg_rating.keys()
@@ -288,23 +188,18 @@ def genarateFinalRatings():
                         continue
                     friends = graph_dict[user]
                     getDistantFriendsRating(user, friends, business_id)
-
-genarateFinalRatings()
-
-"""def evaluate(predicted,actual):
-    correct = 0
-    error = 0.0
-    for i in range(len(predicted)):
-        error += abs(predicted[i] - actual[i])
-        if predicted[i] == actual[i]:
-            correct+=1
-    return error*1.0/len(predicted),correct*1.0/len(predicted)"""
+    f = open(final_rating_pickle,'w')
+    pickle.dump(rating_matrix,f)
+    f.close()
+#genarateFinalRatings()
 
 def evaluateResults():
+    '''
+        Calculate rating classification results
+    '''
     correct = 0
     error = 0.0
     count = 0 
-    cnt = { k : 0 for k in range(1,10)}
     for user in user_businesses.keys():
         uindex = user_avg_rating[user][0]
         for business in user_businesses[user]:
@@ -313,18 +208,15 @@ def evaluateResults():
             key = user + "_" + business
             actual = rating_dict[key]
             predicted = round(rating_matrix[bindex,uindex])
-            cnt [int(predicted)] += 1
             error += abs(int(actual) - int(predicted))
             if(int(actual) == int(predicted)):
                 correct += 1
-    print cnt
     return error*1.0/count, correct*1.0/count
 
-err,acc = evaluateResults()
-print "accuracy for classification", acc
-print "mean absolute error", err
-
 def getRecommendationList(user):
+    '''
+        Generate recommendation for user whose predicted ratings > average rating for the user
+    '''
     uindex = user_avg_rating[user][0]
     ratings = sorted([(b,rating_matrix[business_attr_dict[b][0] , uindex]) for b in business_attr_dict.keys() if user+"_"+b not in rating_train_dict],key = lambda t : -t[1])
     avg_rating = user_avg_rating[user][1]
@@ -332,6 +224,9 @@ def getRecommendationList(user):
     return recommendations_list
 
 def evaluateScore(user, recommendations_list):
+    '''
+        Compute the score as the ratio of the common businesses in the test data and recommendations to the total businesses in test data
+    '''
     business_list = user_businesses[user]
     if len(business_list) == 0:
         return 0.0
@@ -340,12 +235,222 @@ def evaluateScore(user, recommendations_list):
     return score
 
 def evaluateRecommendations():
+    '''
+        Driver program for evaluating recommendations
+    '''
     score = 0.0
     cnt = 0
     for user in user_businesses.keys():
         score += evaluateScore(user, getRecommendationList(user))
         cnt += 1
     return score / cnt
+
+############## Driver Code ###########################
+
+'''
+    Create a temporary table for Ratings. 
+    TABLE: Ratings:
+    Columns: 
+        review_id: # unique identifier for reviews
+        user_id: ID of the user
+        business_id: ID of the business
+        stars: Rating in stars
+'''
+
+ratings  = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load(ratings_file)
+ratings.registerTempTable("Ratings")
+
+'''
+    Create a temporary table for Businesses
+    TABLE: Business
+    Columns:
+        business_id: Unique business ID
+        attributes: Attributes for businesses space separated binary integer (0/1)
+        encodes features like categories, parking, waiter service, good for kids, ambience, good for lunc,breakfast etc....    
+'''
+
+business  = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load(business_file)
+business.registerTempTable("Business")
+
+
+'''
+    Create a temporary table for Friend relationships user<->friend in form of list of edges
+    TABLE: USER_FRIENDS
+    Columns:
+        user: USER ID
+        friend: FRIEND USER ID
+'''
+
+user_friends = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load(user_friends_file)
+user_friends.registerTempTable("User_Friends")
+
+'''
+    Create a temporary file for User
+    TABLE: USER_DATA
+    Columns:
+        user: USER ID
+        average_stars: average rating of the user
+'''
+
+
+user_complete = sqlContext.read.format('com.databricks.spark.csv').options(header='true', inferschema='true').load(user_complete_file)
+user_complete.registerTempTable("User_Data")
+
+# Collect the actual ratings for the users in User data
+user_rating_list = sqlContext.sql("SELECT user_id, business_id, stars FROM Ratings ORDER BY user_id")
+user_rating_actual = user_rating_list.map(lambda p: p[2]).collect()
+
+'''
+    user_avg_rating => dictionary
+    key = user_id
+    value = tuple (numerical_index, average_stars )
+
+    numerical_index is used to map a user_id into a number 
+    This number is used to index into numpy matrices later
+'''
+users_complete_data = sqlContext.sql("SELECT user_id, average_stars FROM User_Data")
+users_avg_rating_rdd = users_complete_data.map(lambda x: (x.user_id, x.average_stars))
+user_avg_rating = {}
+
+cnt = 0
+for value in users_avg_rating_rdd.collect():
+    user_avg_rating[value[0]] = ( cnt ,float(value[1]))
+    cnt += 1
+
+'''
+    businesses_attr_dict => dictionary
+    key = business_id
+    value = ( numeric_index, list of binarized attribute values)
+
+    numerical_index is used to map a business_id into a number 
+    This number is used to index into numpy matrices later
+    
+'''
+
+businesses = sqlContext.sql("SELECT * FROM Business")
+
+business_attr = businesses.map(parseAttributes)
+
+business_attr_dict = {}
+cnt = 0
+for value in business_attr.collect():
+    business_attr_dict[value[0]] = (cnt,value[1])
+    cnt+=1
+
+num_of_attributes = len(value[1])
+
+
+#Load training information
+'''
+    Prior probabilites that the user will rate a business
+    priors_dict => dictionary
+    key = user_id
+    value = list of 5 probabilities [Pr(r=1), Pr(r=2), Pr(r=3), Pr(r=4), Pr(r=5)] 
+
+'''
+
+f = open(priors_pickle)
+priors_dict = pickle.load(f)
+f.close()
+
+'''
+    Conditional probabilites for attributes that the user will rate a business
+    priors_dict => dictionary
+    key = user_id+'~'+rating
+    value = list of probabilities of all attributes value=1 [Pr(Ai = 1) for all in range(num_of_attributes)]
+'''
+
+f = open(attributes_prob_pickle)
+attributes_probabilitiy_dict = pickle.load(f)
+f.close()
+
+'''
+    Load Rating Correlations between friends
+    correlation_dict : 
+    key = user_id+'_'+friend_user_id
+    value = dictionary of probability of rating difference = i for i in (-4,4)
+'''
+
+f = open(correlation_pickle)
+correlation_dict = pickle.load(f)
+f.close()
+
+'''
+    Load adjacency list of friends into graph_dict
+'''
+
+f = open(graphs_pickle)
+graph_dict = pickle.load(f)
+f.close()
+
+'''
+    Load rating dictionary for test data
+    key = user_id+"_"+business_id
+    value = rating
+'''
+
+f = open(rating_dict_file)
+rating_dict = pickle.load(f)
+f.close()
+
+'''
+    Load rating dictionary for train data
+    key = user_id+"_"+business_id
+    value = rating
+'''
+
+f = open(ratings_train_dict_file)
+rating_train_dict = pickle.load(f)
+f.close()
+
+'''
+    user -> rated businesses mapping 
+    key = user_id
+    value = list of businesses user has rated 
+'''
+
+f = open(user_businesses_file)
+user_businesses = pickle.load(f)
+f.close()
+
+'''
+    Load matrices calculated for faster computation
+    Generation of these matrices are computation intensive
+    
+    Rows =>     Business 
+    Columns =>  Users  
+
+    naive_matrix : Calculates Naive Bayes Probability for user business pairs
+    rating_matrix : Initial rating matrix before Distant Friend Inference is applied
+
+'''
+
+try:
+    f = open(naive_pickle)
+    naive_matrix = pickle.load(f)
+    f.close()
+    f = open(b_users_pickle)
+    rating_matrix = pickle.load(f)
+    f.close()
+except:
+    naive_matrix = np.zeros( (len(business_attr_dict),len(user_avg_rating)) )        
+    rating_matrix = generateBusinessUserRatings()    
+
+'''
+    Load the rating matrix after distant friend inference
+    rating_matrix : final rating matrix
+'''
+
+try:
+    f = open(final_rating_pickle)
+    rating_matrix = pickle.load(f)
+    f.close()
+except:
+    generateFinalRatings()
+
+err,acc = evaluateResults()
+print "accuracy for classification", acc
+print "mean absolute error", err
 
 accuracy = evaluateRecommendations()
 print "accuracy : ", accuracy
